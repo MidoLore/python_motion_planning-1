@@ -1,0 +1,2 @@
+import python_motion_planning
+print(python_motion_planning.__file__)

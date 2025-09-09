@@ -9,107 +9,140 @@ from abc import ABC, abstractmethod
 from scipy.spatial import cKDTree
 import numpy as np
 
-from .node import Node
+from .node import Node  # keep your Node class
 
 class Env(ABC):
     """
-    Class for building 2-d workspace of robots.
-
-    Parameters:
-        x_range (int): x-axis range of enviroment
-        y_range (int): y-axis range of environmet
-        eps (float): tolerance for float comparison
-
-    Examples:
-        >>> from python_motion_planning.utils import Env
-        >>> env = Env(30, 40)
+    Class for building a workspace of robots in 2D or 3D.
     """
-    def __init__(self, x_range: int, y_range: int, eps: float = 1e-6) -> None:
-        # size of environment
-        self.x_range = x_range  
+    def __init__(self, x_range: int, y_range: int, z_range: int = None, eps: float = 1e-6) -> None:
+        """
+        x_range, y_range, z_range: dimensions of the environment
+        If z_range is None, environment is 2D.
+        """
+        self.x_range = x_range
         self.y_range = y_range
+        self.z_range = z_range
         self.eps = eps
 
     @property
     def grid_map(self) -> set:
-        return {(i, j) for i in range(self.x_range) for j in range(self.y_range)}
+        """
+        Returns all coordinates in the environment as tuples.
+        """
+        if self.z_range is None:
+            return {(i, j) for i in range(self.x_range) for j in range(self.y_range)}
+        else:
+            return {(i, j, k) for i in range(self.x_range)
+                              for j in range(self.y_range)
+                              for k in range(self.z_range)}
 
     @abstractmethod
     def init(self) -> None:
         pass
 
+
 class Grid(Env):
     """
-    Class for discrete 2-d grid map.
-
-    Parameters:
-        x_range (int): x-axis range of enviroment
-        y_range (int): y-axis range of environmet
+    Class for discrete 3D grid map.
     """
-    def __init__(self, x_range: int, y_range: int) -> None:
-        super().__init__(x_range, y_range)
-        # allowed motions
-        self.motions = [Node((-1, 0), None, 1, None), Node((-1, 1),  None, sqrt(2), None),
-                        Node((0, 1),  None, 1, None), Node((1, 1),   None, sqrt(2), None),
-                        Node((1, 0),  None, 1, None), Node((1, -1),  None, sqrt(2), None),
-                        Node((0, -1), None, 1, None), Node((-1, -1), None, sqrt(2), None)]
-        # obstacles
+    def __init__(self, x_range: int, y_range: int, z_range: int) -> None:
+        super().__init__(x_range, y_range, z_range)
+
+        # 26-connected 3D motions (neighbors in 3D grid)
+        self.motions = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                for dz in [-1, 0, 1]:
+                    if dx == dy == dz == 0:
+                        continue
+                    cost = sqrt(dx**2 + dy**2 + dz**2)
+                    self.motions.append(Node((dx, dy, dz), None, cost, None))
+
         self.obstacles = None
         self.obstacles_tree = None
         self.init()
-    
+
     def init(self) -> None:
         """
-        Initialize grid map.
+        Initialize 3D grid map with boundaries and some obstacles.
         """
-        x, y = self.x_range, self.y_range
+        x, y, z = self.x_range, self.y_range, self.z_range
         obstacles = set()
 
-        # boundary of environment
+        # boundaries (all outer surfaces)
         for i in range(x):
-            obstacles.add((i, 0))
-            obstacles.add((i, y - 1))
-        for i in range(y):
-            obstacles.add((0, i))
-            obstacles.add((x - 1, i))
+            for j in range(y):
+                obstacles.add((i, j, 0))
+                obstacles.add((i, j, z-1))
+        for i in range(x):
+            for k in range(z):
+                obstacles.add((i, 0, k))
+                obstacles.add((i, y-1, k))
+        for j in range(y):
+            for k in range(z):
+                obstacles.add((0, j, k))
+                obstacles.add((x-1, j, k))
 
-        self.update(obstacles)
+        # example internal obstacles (can customize)
+        for i in range(5, 10):
+            for j in range(5, 10):
+                for k in range(2, 4):
+                    obstacles.add((i, j, k))
 
-    def update(self, obstacles):
-        self.obstacles = obstacles 
+        self.obstacles = obstacles
         self.obstacles_tree = cKDTree(np.array(list(obstacles)))
 
+    def update(self, obstacles):
+        """
+        Update obstacles in the 3D grid.
+        """
+        self.obstacles = obstacles
+        self.obstacles_tree = cKDTree(np.array(list(obstacles)))
 
 class Map(Env):
     """
-    Class for continuous 2-d map.
-
-    Parameters:
-        x_range (int): x-axis range of enviroment
-        y_range (int): y-axis range of environmet
+    Class for continuous 3D map.
     """
-    def __init__(self, x_range: int, y_range: int) -> None:
-        super().__init__(x_range, y_range)
+    def __init__(self, x_range: int, y_range: int, z_range: int) -> None:
+        super().__init__(x_range, y_range, z_range)
         self.boundary = None
-        self.obs_circ = None
-        self.obs_rect = None
+        self.obs_circ = None  # spherical obstacles
+        self.obs_rect = None  # rectangular/prism obstacles
         self.init()
 
     def init(self):
         """
-        Initialize map.
+        Initialize 3D map.
         """
-        x, y = self.x_range, self.y_range
+        x, y, z = self.x_range, self.y_range, self.z_range
 
-        # boundary of environment
+        # boundaries: 6 faces of the 3D box (xmin, ymin, zmin, dx, dy, dz)
         self.boundary = [
-            [0, 0, 1, y],
-            [0, y, x, 1],
-            [1, 0, x, 1],
-            [x, 1, 1, y]
+            [0, 0, 0, x, 1, 1],        # xmin face
+            [0, 0, 0, 1, y, 1],        # ymin face
+            [0, 0, 0, 1, 1, z],        # zmin face
+            [x-1, 0, 0, 1, y, z],      # xmax face
+            [0, y-1, 0, x, 1, z],      # ymax face
+            [0, 0, z-1, x, y, 1]       # zmax face
         ]
-        self.obs_rect = []
-        self.obs_circ = []
+
+        # user-defined rectangular/prism obstacles: [x, y, z, dx, dy, dz]
+        self.obs_rect = [
+            [14, 12, 5, 8, 2, 3],
+            [18, 22, 2, 8, 3, 4],
+            [26, 7, 3, 2, 12, 5],
+            [32, 14, 6, 10, 2, 3]
+        ]
+
+        # user-defined spherical obstacles: [x, y, z, radius]
+        self.obs_circ = [
+            [7, 12, 5, 3],
+            [46, 20, 6, 2],
+            [15, 5, 4, 2],
+            [37, 7, 5, 3],
+            [37, 23, 6, 3]
+        ]
 
     def update(self, boundary=None, obs_circ=None, obs_rect=None):
         self.boundary = boundary if boundary else self.boundary
