@@ -1,40 +1,41 @@
 """
 @file: a_star.py
-@breif: A* motion planning
+@brief: A* motion planning in 3D
 @author: Yang Haodong, Wu Maojia
-@update: 2024.6.23
+@update: 2025.9.9
 """
 import heapq
 
 from .graph_search import GraphSearcher
-from python_motion_planning.utils import Env, Grid, Node
+from python_motion_planning.utils.environment.env import Env, Grid
+from python_motion_planning.utils.environment.node import Node
 
 
 class AStar(GraphSearcher):
     """
-    Class for A* motion planning.
+    Class for A* motion planning in 3D.
 
     Parameters:
-        start (tuple): start point coordinate
-        goal (tuple): goal point coordinate
-        env (Grid): environment
-        heuristic_type (str): heuristic function type
+        start (tuple): start point coordinate (x, y, z)
+        goal (tuple): goal point coordinate (x, y, z)
+        env (Grid): 3D environment
+        heuristic_type (str): heuristic function type ("euclidean", "manhattan", etc.)
 
     Examples:
         >>> import python_motion_planning as pmp
-        >>> planner = pmp.AStar((5, 5), (45, 25), pmp.Grid(51, 31))
+        >>> planner = pmp.AStar((5, 5, 2), (45, 25, 5), pmp.Grid(51, 31, 11))
         >>> cost, path, expand = planner.plan()     # planning results only
         >>> planner.plot.animation(path, str(planner), cost, expand)  # animation
         >>> planner.run()       # run both planning and animation
 
     References:
-        [1] A Formal Basis for the heuristic Determination of Minimum Cost Paths
+        [1] Hart, Nilsson, Raphael (1968). A Formal Basis for the Heuristic Determination of Minimum Cost Paths
     """
     def __init__(self, start: tuple, goal: tuple, env: Grid, heuristic_type: str = "euclidean") -> None:
         super().__init__(start, goal, env, heuristic_type)
 
     def __str__(self) -> str:
-        return "A*"
+        return "A* (3D)"
 
     def plan(self) -> tuple:
         """
@@ -67,7 +68,7 @@ class AStar(GraphSearcher):
                 # exists in CLOSED list
                 if node_n.current in CLOSED:
                     continue
-                
+
                 node_n.parent = node.current
                 node_n.h = self.h(node_n, self.goal)
 
@@ -75,7 +76,7 @@ class AStar(GraphSearcher):
                 if node_n == self.goal:
                     heapq.heappush(OPEN, node_n)
                     break
-                
+
                 # update OPEN list
                 heapq.heappush(OPEN, node_n)
 
@@ -84,16 +85,25 @@ class AStar(GraphSearcher):
 
     def getNeighbor(self, node: Node) -> list:
         """
-        Find neighbors of node.
-
-        Parameters:
-            node (Node): current node
-
-        Returns:
-            neighbors (list): neighbors of current node
+        Find neighbors of node in 3D, constrained to valid grid bounds (y >= 0).
         """
-        return [node + motion for motion in self.motions
-                if not self.isCollision(node, node + motion)]
+        neighbors = []
+        for motion in self.motions:
+            neighbor = node + motion
+            x, y, z = neighbor.current
+
+            # Only allow nodes within the grid and y >= 0
+            if y < 0 or x < 0 or z < 0:
+                continue
+            if x >= self.env.x_range or y >= self.env.y_range or z >= self.env.z_range:
+                continue
+            if self.isCollision(node, neighbor):
+                continue
+
+            neighbors.append(neighbor)
+        return neighbors
+
+
 
     def extractPath(self, closed_list: dict) -> tuple:
         """

@@ -1,48 +1,39 @@
 """
 @file: dijkstra.py
-@breif: Dijkstra motion planning
+@brief: Dijkstra 3D motion planning
 @author: Yang Haodong, Wu Maojia
-@update: 2024.6.23
+@update: 2025.9.9
 """
 import heapq
 
 from .a_star import AStar
-from python_motion_planning.utils import Env, Grid
+from python_motion_planning.utils import Env, Grid, Node
 
 
 class Dijkstra(AStar):
     """
-    Class for Dijkstra motion planning.
+    Class for Dijkstra motion planning in 3D.
 
     Parameters:
-        start (tuple): start point coordinate
-        goal (tuple): goal point coordinate
-        env (Grid): environment
-        heuristic_type (str): heuristic function type
-
-    Examples:
-        >>> import python_motion_planning as pmp
-        >>> planner = pmp.Dijkstra((5, 5), (45, 25), pmp.Grid(51, 31))
-        >>> cost, path, expand = planner.plan()     # planning results only
-        >>> planner.plot.animation(path, str(planner), cost, expand)  # animation
-        >>> planner.run()       # run both planning and animation
+        start (tuple): start point coordinate (x, y, z)
+        goal (tuple): goal point coordinate (x, y, z)
+        env (Grid): 3D grid environment
     """
-    def __init__(self, start: tuple, goal: tuple, env: Grid, heuristic_type: str = "euclidean") -> None:
-        super().__init__(start, goal, env, heuristic_type)
+    def __init__(self, start: tuple, goal: tuple, env: Grid) -> None:
+        super().__init__(start, goal, env)
     
     def __str__(self) -> str:
         return "Dijkstra"
 
     def plan(self) -> tuple:
         """
-        Dijkstra motion plan function.
+        Dijkstra 3D motion plan function.
 
         Returns:
             cost (float): path cost
-            path (list): planning path
-            expand (list): all nodes that planner has searched
+            path (list): planned path
+            expand (list): all nodes explored
         """
-        # OPEN list (priority queue) and CLOSED list (hash table)
         OPEN = []
         heapq.heappush(OPEN, self.start)
         CLOSED = dict()
@@ -50,36 +41,35 @@ class Dijkstra(AStar):
         while OPEN:
             node = heapq.heappop(OPEN)
 
-            # exists in CLOSED list
+            # already explored
             if node.current in CLOSED:
                 continue
 
-            # goal found
+            # goal reached
             if node == self.goal:
                 CLOSED[node.current] = node
                 cost, path = self.extractPath(CLOSED)
                 return cost, path, list(CLOSED.values())
 
             for node_n in self.getNeighbor(node):
-             
-                # hit the obstacle
-                if node_n.current in self.obstacles:
+                # skip obstacles
+                if hasattr(self.env, "obstacles") and node_n.current in self.env.obstacles:
                     continue
-                
-                # exists in CLOSED list
+
+                # already explored
                 if node_n.current in CLOSED:
                     continue
-                
+
                 node_n.parent = node.current
-                node_n.h = 0
+                node_n.h = 0  # Dijkstra has no heuristic
 
                 # goal found
                 if node_n == self.goal:
                     heapq.heappush(OPEN, node_n)
                     break
-                
-                # update OPEN set
+
                 heapq.heappush(OPEN, node_n)
 
             CLOSED[node.current] = node
+
         return [], [], []
