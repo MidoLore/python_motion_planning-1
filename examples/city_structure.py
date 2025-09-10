@@ -1,14 +1,13 @@
 """
 @file: common_examples_3d_animated_city.py
-@brief: 3D animated path visualization with skyscraper obstacles (drone delivery scenario)
+@brief: 3D animated path visualization with deterministic skyscraper obstacles (drone delivery scenario) + metrics collection
 @author: Adapted
-@update: 2025.9.9
+@update: 2025.9.10
 """
-import sys, os
+import sys, os, time
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
-import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from python_motion_planning import *
@@ -36,8 +35,7 @@ def animate_path_3d(path, expand=None, start=None, goal=None, buildings=None, gr
 
     # Visited nodes in light gray
     if expand:
-        # Only plot every few nodes to reduce lag
-        sample_step = max(len(expand)//500, 1)
+        sample_step = max(len(expand)//500, 1)  # sample to reduce lag
         ex, ey, ez = zip(*[node.current for node in expand[::sample_step]])
         ax.scatter(ex, ey, ez, c="lightgray", alpha=0.2, s=15, marker="o", label="Visited")
 
@@ -57,7 +55,7 @@ def animate_path_3d(path, expand=None, start=None, goal=None, buildings=None, gr
     ax.legend()
 
     # Animation update
-    frame_step = max(len(path)//200, 1)  # reduces number of frames for long paths
+    frame_step = max(len(path)//200, 1)
     def update(num):
         num = num * frame_step
         if num < len(path):
@@ -70,29 +68,36 @@ def animate_path_3d(path, expand=None, start=None, goal=None, buildings=None, gr
     plt.show()
 
 
-def generate_city(grid_env, num_buildings=10, max_height=15):
+def generate_city(grid_env, num_blocks_x=4, num_blocks_y=4, max_height=18, street_width=3):
     """
-    Generate skyscraper obstacles randomly on the grid.
-    Returns a list of tuples: (x_start, y_start, width, depth, height)
+    Generate skyscrapers in a grid layout with equal spacing (streets) between them.
+    Deterministic sizes, no overlap.
     """
     buildings = []
     wall_coords = []
 
-    np.random.seed(42)  # For reproducibility
-    for _ in range(num_buildings):
-        x_start = np.random.randint(5, grid_env.x_range - 5)
-        y_start = np.random.randint(5, grid_env.y_range - 5)
-        width = np.random.randint(3, 7)
-        depth = np.random.randint(3, 7)
-        height = np.random.randint(5, max_height)
-        buildings.append((x_start, y_start, width, depth, height))
+    block_size_x = (grid_env.x_range - (num_blocks_x + 1) * street_width) // num_blocks_x
+    block_size_y = (grid_env.y_range - (num_blocks_y + 1) * street_width) // num_blocks_y
 
-        # Generate all coordinates for collision checking
-        for x in range(x_start, min(x_start + width, grid_env.x_range)):
-            for y in range(y_start, min(y_start + depth, grid_env.y_range)):
-                for z in range(height):
-                    wall_coords.append((x, y, z))
-    
+    for bx in range(num_blocks_x):
+        for by in range(num_blocks_y):
+            x_start = street_width + bx * (block_size_x + street_width)
+            y_start = street_width + by * (block_size_y + street_width)
+
+            width = block_size_x - 1 - ((bx + by) % 2)
+            depth = block_size_y - 1 - ((bx * 2 + by) % 2)
+            height = 5 + ((bx * 3 + by * 5) % max_height)
+
+            width = max(3, width)
+            depth = max(3, depth)
+
+            buildings.append((x_start, y_start, width, depth, height))
+
+            for xi in range(x_start, min(x_start + width, grid_env.x_range)):
+                for yi in range(y_start, min(y_start + depth, grid_env.y_range)):
+                    for zi in range(height):
+                        wall_coords.append((xi, yi, zi))
+
     return buildings, wall_coords
 
 
@@ -101,22 +106,32 @@ def main():
     grid_env = Grid(50, 50, 20)
 
     # ---------- Generate city ----------
-    buildings, wall_coords = generate_city(grid_env, num_buildings=15, max_height=18)
+    buildings, wall_coords = generate_city(grid_env, num_blocks_x=3, num_blocks_y=4, max_height=16)
     grid_env.update(obstacles=set(wall_coords))
 
     # ---------- Start and Goal ----------
-    start = (5, 5, 1)       # low altitude
-    goal = (45, 25, 10)     # higher altitude
+    start = (10, 5, 5)
+    goal = (45, 40, 10)
 
     # ---------- Planner ----------
-    # Switch algorithms easily by commenting/uncommenting
-    planner = AStar(start=start, goal=goal, env=grid_env)
-    # planner = Dijkstra(start=start, goal=goal, env=grid_env)
+    # planner = AStar(start=start, goal=goal, env=grid_env)
+    planner = Dijkstra(start=start, goal=goal, env=grid_env)
+    # planner = ThetaStar(start=start, goal=goal, env=grid_env)
 
-    # ---------- Plan ----------
+    # ---------- Plan + Metrics ----------
+    t0 = time.time()
     cost, path, expand = planner.plan()
+    t1 = time.time()
+    exec_time = t1 - t0
+
+    visited_nodes = len(expand)
+    path_length = len(path)
+
+    print("===== Metrics =====")
+    print(f"Execution time: {exec_time:.6f} s")
+    print(f"Visited nodes: {visited_nodes}")
+    print(f"Path length (cells): {path_length}")
     print(f"Path cost: {cost}")
-    print(f"Path length: {len(path)}")
 
     # Reverse path if needed
     path = path[::-1]
